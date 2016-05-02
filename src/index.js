@@ -155,6 +155,10 @@ LandlordClient.prototype.lookupTenantUrl = function lookupTenantUri(tenantId) {
 		});
 };
 
+LandlordClient.prototype.health = function health() {
+	return request.get(this._landlord + '/health');
+};
+
 module.exports = LandlordClient;
 module.exports.AbstractLandlordCache = AbstractLandlordCache;
 module.exports.errors = errors;
