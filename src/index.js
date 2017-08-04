@@ -163,8 +163,8 @@ LandlordClient.prototype.validateConfiguration = function validateConfiguration(
 	return new Promise(function(resolve, reject) {
 		const port = self._landlordOpts.port || (self._landlordOpts.protocol === 'https:' ? 443 : 80);
 		tcpp.ping(Object.assign({
-			attempts: 1,
-			timeout: 500
+			attempts: 3,
+			timeout: 1000
 		}, opts, {
 			address: self._landlordOpts.hostname,
 			port: port
