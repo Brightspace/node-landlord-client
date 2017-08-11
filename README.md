@@ -71,6 +71,12 @@ Promise to a String.
 
 ---
 
+#### `.validateConfiguration()` -> `Promise<String>`
+
+Checks availability by pinging Landlord. Returns a Promise to a String.
+
+---
+
 #### `LandlordClient.errors` -> `Object`
 
 Provided as part of the export is an object containing the well-typed errors
