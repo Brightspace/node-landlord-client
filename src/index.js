@@ -2,7 +2,6 @@
 
 var parseCacheControl = require('parse-cache-control'),
 	promised = require('promised-method'),
-	url = require('url'),
 	request = require('superagent');
 
 var AbstractLandlordCache = require('./abstract-cache'),
@@ -25,7 +24,6 @@ function LandlordClient(opts) {
 	}
 
 	this._landlord = opts.endpoint || DEFAULT_LANDLORD_URI;
-	this._landlordOpts = url.parse(this._landlord);
 }
 
 LandlordClient.prototype.lookupTenantId = promised(/* @this */ function lookupTenantId(host) {
