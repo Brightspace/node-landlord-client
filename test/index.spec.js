@@ -138,14 +138,4 @@ describe('LandlordClient', function() {
 				expect(cacheTenantUrlLookupSpy.notCalled).to.be.true;
 			});
 	});
-
-	it('(ping) Landlord PROD is available', function() {
-		const instance = new LandlordClient({ endpoint: 'https://landlord.brightspace.com' });
-		return expect(instance.validateConfiguration()).to.eventually.equal('OK');
-	});
-
-	it('(ping) Landlord DEV is available', function() {
-		const instance = new LandlordClient({ endpoint: 'https://landlord.dev.brightspace.com' });
-		return expect(instance.validateConfiguration()).to.eventually.equal('OK');
-	});
 });
