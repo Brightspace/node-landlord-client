@@ -3,8 +3,7 @@
 var parseCacheControl = require('parse-cache-control'),
 	promised = require('promised-method'),
 	url = require('url'),
-	request = require('superagent'),
-	tcpp = require('tcp-ping');
+	request = require('superagent');
 
 var AbstractLandlordCache = require('./abstract-cache'),
 	errors = require('./errors'),
@@ -158,24 +157,19 @@ LandlordClient.prototype.lookupTenantUrl = function lookupTenantUri(tenantId) {
 		});
 };
 
-LandlordClient.prototype.validateConfiguration = function validateConfiguration(opts) {
+LandlordClient.prototype.validateConfiguration = function validateConfiguration() {
 	var self = this;
 	return new Promise(function(resolve, reject) {
-		const port = self._landlordOpts.port || (self._landlordOpts.protocol === 'https:' ? 443 : 80);
-		tcpp.ping(Object.assign({
-			attempts: 3,
-			timeout: 1000
-		}, opts, {
-			address: self._landlordOpts.hostname,
-			port: port
-		}), function(err, data) {
-			var available = data && data.min !== undefined;
-			if (!available) {
-				reject(new errors.LandlordNotAvailable(self._landlord, data.results));
-			} else {
-				err ? reject(err) : resolve(data);
-			}
-		});
+		request
+			.get(self._landlord + '/ping')
+			.end(function(err, res) {
+				if (err) {
+					reject(new errors.LandlordNotAvailable(self._landlord, res));
+					return;
+				}
+				resolve('OK');
+			});
+
 	});
 };
 
