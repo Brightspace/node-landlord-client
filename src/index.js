@@ -107,82 +107,62 @@ LandlordClient.prototype.lookupTenantId = /* @this */ function lookupTenantId(ho
 	return search;
 };
 
-LandlordClient.prototype._lookupTenantInfo = function lookupTenantInfo(tenantId) {
+LandlordClient.prototype.lookupTenantUrl = function lookupTenantUrl(tenantId) {
 	var self = this;
+
+	if ('string' !== typeof tenantId) {
+		return Promise.reject(new Error('tenantId must be a valid string'));
+	}
 
 	if (this._inflightFetches.has(tenantId)) {
 		return this._inflightFetches.get(tenantId);
 	}
 
-	var fetch = new Promise(function(resolve, reject) {
-		if ('string' !== typeof tenantId) {
-			reject(new Error('tenantId must be a valid string'));
-		}
+	function doAndCacheLookup() {
+		return new Promise(function(resolve, reject) {
+			request
+				.get(self._landlord + '/v1/tenants/' + tenantId)
+				.set('User-Agent', self._userAgent)
+				.end(function(err, res) {
+					if (err) {
+						if (res && res.status === 404) {
+							reject(new errors.TenantIdNotFound(tenantId));
+						} else {
+							reject(new errors.TenantLookupFailed(err, tenantId));
+						}
 
-		request
-			.get(self._landlord + '/v1/tenants/' + tenantId)
-			.set('User-Agent', self._userAgent)
-			.end(function(err, res) {
-				if (err) {
-					if (res && res.status === 404) {
-						reject(new errors.TenantIdNotFound(tenantId));
-					} else {
-						reject(new errors.TenantLookupFailed(err, tenantId));
+						return;
 					}
 
-					return;
-				}
+					resolve(res);
+				});
+		}).then(function(res) {
+			var tenantInfo = res.body;
 
-				var tenantInfo = res.body;
+			if ('object' !== typeof tenantInfo || !tenantInfo.hasOwnProperty('domain') || !tenantInfo.hasOwnProperty('isHttpSite')) {
+				throw new errors.TenantLookupFailed({}, tenantId);
+			}
 
-				if ('object' !== typeof tenantInfo || !tenantInfo.hasOwnProperty('domain') || !tenantInfo.hasOwnProperty('isHttpSite')) {
-					reject(new errors.TenantLookupFailed({}, tenantId));
-					return;
-				}
+			var domain = tenantInfo.domain.replace(/\/+$/g, '');
+			var protocol = tenantInfo.isHttpSite ? 'http' : 'https';
+			var url = protocol + '://' + domain + '/';
 
-				tenantInfo.domain = tenantInfo.domain.replace(/\/+$/g, '');
+			var cacheControl = parseCacheControl(res.headers['cache-control']);
+			if (null !== cacheControl) {
+				return self
+					._cache
+					.cacheTenantUrlLookup(tenantId, url, self._clock() + cacheControl['max-age'])
+					.then(returnUrl, returnUrl);
+			}
+			return url;
 
-				var cacheControl = parseCacheControl(res.headers['cache-control']);
-				tenantInfo._maxAge = null !== cacheControl
-					? cacheControl['max-age']
-					: null;
-
-				resolve(tenantInfo);
-			});
-	});
-
-	this._inflightFetches.set(tenantId, fetch);
-	function clearInflight() {
-		self._inflightFetches.delete(tenantId);
-	}
-	fetch.then(clearInflight, clearInflight);
-
-	return fetch;
-};
-
-LandlordClient.prototype.lookupTenantUrl = function lookupTenantUri(tenantId) {
-	var self = this;
-
-	function doAndCacheLookup() {
-		return self
-			._lookupTenantInfo(tenantId)
-			.then(function(tenantInfo) {
-				var protocol = tenantInfo.isHttpSite ? 'http' : 'https';
-				var url = protocol + '://' + tenantInfo.domain + '/';
-
-				if (null !== tenantInfo._maxAge) {
-					return self
-						._cache
-						.cacheTenantUrlLookup(tenantId, url, self._clock() + tenantInfo._maxAge)
-						.catch(function() {})
-						.then(function() { return url; });
-				}
-
+			function returnUrl() {
 				return url;
-			});
+			}
+		});
 	}
 
-	return self
+	var fetch = this
 		._cache
 		.getTenantUrlLookup(tenantId)
 		.then(function(value) {
@@ -197,6 +177,14 @@ LandlordClient.prototype.lookupTenantUrl = function lookupTenantUri(tenantId) {
 
 			return url;
 		}, doAndCacheLookup);
+
+	this._inflightFetches.set(tenantId, fetch);
+	function clearInflight() {
+		self._inflightFetches.delete(tenantId);
+	}
+	fetch.then(clearInflight, clearInflight);
+
+	return fetch;
 };
 
 LandlordClient.prototype.validateConfiguration = function validateConfiguration() {
