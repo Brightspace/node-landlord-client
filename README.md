@@ -16,7 +16,8 @@ npm install @d2l/landlord-client --save
 ```js
 var LandlordClient = require('@d2l/landlord-client');
 
-var client = new LandlordClient();
+var client = new LandlordClient()
+	.on('error', console.error);
 
 client
 	.lookupTenantId('valence.desire2learn.com:443')
@@ -76,6 +77,16 @@ a String.
 #### `.validateConfiguration()` -> `Promise<String>`
 
 Checks availability by pinging Landlord. Returns a Promise to a String.
+
+___
+
+#### `.on('error', Function<Error> callback)` -> `LandlordClient`
+
+`LandlordClient` is an `EventEmitter` and will emit `error` events for errors
+which occur outside of the normal workflow (such as background fetches). You
+_should_ add an error handler , perhaps just to your logger. Failure to add an
+error listener [may lead your program to
+exit](https://nodejs.org/api/events.html#events_error_events);
 
 ---
 
