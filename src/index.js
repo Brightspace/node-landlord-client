@@ -1,5 +1,8 @@
 'use strict';
 
+var EventEmitter = require('events'),
+	util = require('util');
+
 var parseCacheControl = require('parse-cache-control'),
 	request = require('superagent');
 
@@ -36,7 +39,10 @@ function LandlordClient(opts) {
 
 	this._inflightSearches = new Map();
 	this._inflightFetches = new Map();
+
+	EventEmitter.call(this);
 }
+util.inherits(LandlordClient, EventEmitter);
 
 LandlordClient.prototype.lookupTenantId = /* @this */ function lookupTenantId(host) {
 	var self = this;
@@ -169,9 +175,9 @@ LandlordClient.prototype.lookupTenantUrl = function lookupTenantUrl(tenantId) {
 			var url = value.url;
 
 			if (value.expiry <= self._clock()) {
-				return doAndCacheLookup()
-					.catch(function() {
-						return url;
+				doAndCacheLookup()
+					.catch(function(err) {
+						self.emit('error', err);
 					});
 			}
 
