@@ -294,7 +294,45 @@ describe('LandlordClient', function() {
 			});
 	});
 
-	it('uses stale cached value when tenant info lookup fails', function() {
+	it('uses stale cached value and updates in background', function() {
+		sandbox.clock.restore();
+
+		const getRequest = nock(data.endpoint)
+			.get(`/v1/tenants/${data.tenantId}`)
+			.delay(50)
+			.reply(200, {
+				tenantId: data.tenantId,
+				domain: data.domain + '.example.com',
+				isHttpSite: data.isHttpSite
+			}, {
+				'Cache-Control': 'max-age=' + data.maxAge
+			});
+
+		const cache = new LandlordClient.LRULandlordCache();
+		cache.cacheTenantUrlLookup(data.tenantId, data.tenantUrl, 1);
+
+		const before = Date.now();
+		const instance = new LandlordClient({ endpoint: data.endpoint, cache });
+		return expect(instance.lookupTenantUrl(data.tenantId))
+			.to.eventually
+			.equal(`http://${data.domain}/`)
+			.then(function() {
+				const now = Date.now();
+				expect(now - before).to.be.below(50);
+
+				return new Promise(resolve => setTimeout(resolve, 55)).then(() => {
+					getRequest.done();
+
+					return expect(instance.lookupTenantUrl(data.tenantId))
+						.to.eventually
+						.equal(`http://${data.domain}.example.com/`);
+				});
+			});
+	});
+
+	it('emits an error when background refresh fails', function() {
+		sandbox.clock.restore();
+
 		const getRequest = nock(data.endpoint)
 			.get(`/v1/tenants/${data.tenantId}`)
 			.reply(502);
@@ -305,14 +343,20 @@ describe('LandlordClient', function() {
 			.withArgs(data.tenantId)
 			.returns(Promise.resolve({ url: data.tenantUrl, expiry: 1 }));
 
-		sandbox.clock.tick(2 * 1000);
+		let resolveEmittedError;
+		const errorEmitted = new Promise(resolve => {
+			resolveEmittedError = resolve;
+		});
+		const instance = new LandlordClient({ endpoint: data.endpoint, cache })
+			.on('error', resolveEmittedError);
+		instance.lookupTenantUrl(data.tenantId);
 
-		const instance = new LandlordClient({ endpoint: data.endpoint, cache });
-		return expect(instance.lookupTenantUrl(data.tenantId))
-			.to.eventually
-			.equal(data.tenantUrl)
-			.then(function() {
+		return errorEmitted
+			.then(emittedError => {
 				getRequest.done();
+
+				expect(emittedError)
+					.to.be.an.instanceof(errors.TenantLookupFailed);
 			});
 	});
 
