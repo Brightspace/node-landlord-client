@@ -58,6 +58,10 @@ agent when sending requests to Landlord. Assists in tracking issues and RCAs.
 ...new LandlordClient({ name: 'johns-service' })
 ```
 
+##### Option: justInTimeCacheUpdate `boolean`
+
+Optional, default is `false`. Specify `true` when running in AWS Lambda to avoid socket ECONNRESET errors during background tenant url lookups that are caused by thaw/freeze Lambda cycle.
+
 ---
 
 #### `.lookupTenantId(String host)` -> `Promise<String>`

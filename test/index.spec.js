@@ -467,4 +467,121 @@ describe('LandlordClient', function() {
 				getRequest.done();
 			});
 	});
+
+	it('justInTimeCacheUpdate - lookupTenantUrl returns updated value when chached value expires', function() {
+		nock(data.endpoint)
+			.get(`/v1/tenants/${data.tenantId}`)
+			.reply(200, {
+				tenantId: data.tenantId,
+				domain: data.domain,
+				isHttpSite: data.isHttpSite
+			}, {
+				'Cache-Control': 'max-age=100'
+			});
+
+		const instance = new LandlordClient({ endpoint: data.endpoint, justInTimeCacheUpdate: true });
+
+		return expect(instance.lookupTenantUrl(data.tenantId))
+			.to.eventually
+			.equal(data.tenantUrl)
+			.then(function() {
+				const updatedDomain = 'localhost.updated';
+				const updatedUrl = 'http://localhost.updated/';
+				nock(data.endpoint)
+					.get(`/v1/tenants/${data.tenantId}`)
+					.reply(200, {
+						tenantId: data.tenantId,
+						domain: updatedDomain,
+						isHttpSite: data.isHttpSite
+					}, {
+						'Cache-Control': 'max-age=100'
+					});
+
+				sandbox.clock.tick(100 * 1000);
+				return expect(instance.lookupTenantUrl(data.tenantId))
+					.to.eventually
+					.equal(updatedUrl);
+			});
+
+	});
+
+	it('justInTimeCacheUpdate - lookupTenantUrl returns stale cached value and emits error when item expires and tenant info lookup fails', function() {
+		nock(data.endpoint)
+			.get(`/v1/tenants/${data.tenantId}`)
+			.reply(200, {
+				tenantId: data.tenantId,
+				domain: data.domain,
+				isHttpSite: data.isHttpSite
+			}, {
+				'Cache-Control': 'max-age=100'
+			});
+
+		let emittedError;
+		const instance = new LandlordClient({ endpoint: data.endpoint, justInTimeCacheUpdate: true })
+			.on('error', (err) => {emittedError = err;});
+
+		return expect(instance.lookupTenantUrl(data.tenantId))
+			.to.eventually
+			.equal(data.tenantUrl)
+			.then(function() {
+				nock(data.endpoint)
+					.get(`/v1/tenants/${data.tenantId}`)
+					.reply(500);
+
+				sandbox.clock.tick(101 * 1000);
+				return expect(instance.lookupTenantUrl(data.tenantId))
+					.to.eventually
+					.equal(data.tenantUrl)
+					.then(() => {
+						expect(emittedError)
+							.to.be.an.instanceof(errors.TenantLookupFailed);
+					});
+
+			});
+	});
+
+	it('justInTimeCacheUpdate - lookupTenantUrl returns cached value when item is not expired', function() {
+		nock(data.endpoint)
+			.get(`/v1/tenants/${data.tenantId}`)
+			.reply(200, {
+				tenantId: data.tenantId,
+				domain: data.domain,
+				isHttpSite: data.isHttpSite
+			}, {
+				'Cache-Control': 'max-age=100'
+			});
+
+		const instance = new LandlordClient({ endpoint: data.endpoint, justInTimeCacheUpdate: true });
+
+		return expect(instance.lookupTenantUrl(data.tenantId))
+			.to.eventually
+			.equal(data.tenantUrl)
+			.then(function() {
+				sandbox.clock.tick(99 * 1000);
+				return expect(instance.lookupTenantUrl(data.tenantId))
+					.to.eventually
+					.equal(data.tenantUrl);
+			});
+	});
+
+	it('justInTimeCacheUpdate - lookupTenantUrl will reject if cache is empty and lookup fails', function() {
+		nock(data.endpoint)
+			.get(`/v1/tenants/${data.tenantId}`)
+			.reply(500);
+
+		sandbox.clock.tick(200 * 1000);
+		const instance = new LandlordClient({ endpoint: data.endpoint, justInTimeCacheUpdate: true });
+		return expect(instance.lookupTenantUrl(data.tenantId))
+			.to.eventually.rejected;
+	});
+
+	it('background lookup - lookupTenantUrl will reject if cache is empty and lookup fails', function() {
+		nock(data.endpoint)
+			.get(`/v1/tenants/${data.tenantId}`)
+			.reply(500);
+
+		const instance = new LandlordClient({ endpoint: data.endpoint });
+		return expect(instance.lookupTenantUrl(data.tenantId))
+			.to.eventually.rejected;
+	});
 });
