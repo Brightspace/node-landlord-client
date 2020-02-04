@@ -1,6 +1,6 @@
 {
   "name": "landlord-client",
-  "version": "5.0.1",
+  "version": "5.0.0",
   "description": "Helper for interacting with Landlord",
   "main": "src/index.js",
   "files": [

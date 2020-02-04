@@ -36,7 +36,7 @@ function LandlordClient(opts) {
 	}
 
 	this._landlord = opts.endpoint || DEFAULT_LANDLORD_URI;
-	this._justInTimeCacheUpdate = opts.justInTimeCacheUpdate || false;
+	this._blockOnRefresh = opts.blockOnRefresh || false;
 
 	this._inflightSearches = new Map();
 	this._inflightFetches = new Map();
@@ -176,17 +176,14 @@ LandlordClient.prototype.lookupTenantUrl = function lookupTenantUrl(tenantId) {
 			var url = value.url;
 
 			if (value.expiry <= self._clock()) {
-				if (self._justInTimeCacheUpdate) {
-					return doAndCacheLookup()
-						.catch(function(err) {
-							self.emit('error', err);
-							return url;
-						});
-				} else {
-					doAndCacheLookup()
-						.catch(function(err) {
-							self.emit('error', err);
-						});
+				var lookup = doAndCacheLookup()
+					.catch(function(err) {
+						self.emit('error', err);
+						return url;
+					});
+
+				if (self._blockOnRefresh) {
+					return lookup;
 				}
 			}
 

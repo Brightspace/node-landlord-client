@@ -468,7 +468,7 @@ describe('LandlordClient', function() {
 			});
 	});
 
-	it('justInTimeCacheUpdate - lookupTenantUrl returns updated value when chached value expires', function() {
+	it('blockOnRefresh - lookupTenantUrl returns updated value when chached value expires', function() {
 		nock(data.endpoint)
 			.get(`/v1/tenants/${data.tenantId}`)
 			.reply(200, {
@@ -479,7 +479,7 @@ describe('LandlordClient', function() {
 				'Cache-Control': 'max-age=100'
 			});
 
-		const instance = new LandlordClient({ endpoint: data.endpoint, justInTimeCacheUpdate: true });
+		const instance = new LandlordClient({ endpoint: data.endpoint, blockOnRefresh: true });
 
 		return expect(instance.lookupTenantUrl(data.tenantId))
 			.to.eventually
@@ -505,7 +505,7 @@ describe('LandlordClient', function() {
 
 	});
 
-	it('justInTimeCacheUpdate - lookupTenantUrl returns stale cached value and emits error when item expires and tenant info lookup fails', function() {
+	it('blockOnRefresh - lookupTenantUrl returns stale cached value and emits error when item expires and tenant info lookup fails', function() {
 		nock(data.endpoint)
 			.get(`/v1/tenants/${data.tenantId}`)
 			.reply(200, {
@@ -517,7 +517,7 @@ describe('LandlordClient', function() {
 			});
 
 		let emittedError;
-		const instance = new LandlordClient({ endpoint: data.endpoint, justInTimeCacheUpdate: true })
+		const instance = new LandlordClient({ endpoint: data.endpoint, blockOnRefresh: true })
 			.on('error', (err) => {emittedError = err;});
 
 		return expect(instance.lookupTenantUrl(data.tenantId))
@@ -540,7 +540,7 @@ describe('LandlordClient', function() {
 			});
 	});
 
-	it('justInTimeCacheUpdate - lookupTenantUrl returns cached value when item is not expired', function() {
+	it('blockOnRefresh - lookupTenantUrl returns cached value when item is not expired', function() {
 		nock(data.endpoint)
 			.get(`/v1/tenants/${data.tenantId}`)
 			.reply(200, {
@@ -551,7 +551,7 @@ describe('LandlordClient', function() {
 				'Cache-Control': 'max-age=100'
 			});
 
-		const instance = new LandlordClient({ endpoint: data.endpoint, justInTimeCacheUpdate: true });
+		const instance = new LandlordClient({ endpoint: data.endpoint, blockOnRefresh: true });
 
 		return expect(instance.lookupTenantUrl(data.tenantId))
 			.to.eventually
@@ -564,13 +564,13 @@ describe('LandlordClient', function() {
 			});
 	});
 
-	it('justInTimeCacheUpdate - lookupTenantUrl will reject if cache is empty and lookup fails', function() {
+	it('blockOnRefresh - lookupTenantUrl will reject if cache is empty and lookup fails', function() {
 		nock(data.endpoint)
 			.get(`/v1/tenants/${data.tenantId}`)
 			.reply(500);
 
 		sandbox.clock.tick(200 * 1000);
-		const instance = new LandlordClient({ endpoint: data.endpoint, justInTimeCacheUpdate: true });
+		const instance = new LandlordClient({ endpoint: data.endpoint, blockOnRefresh: true });
 		return expect(instance.lookupTenantUrl(data.tenantId))
 			.to.eventually.rejected;
 	});
