@@ -157,233 +157,292 @@ describe('LandlordClient', function() {
 			});
 	});
 
-	it('looks up tenant info when not cached', function() {
-		const getRequest = nock(data.endpoint)
-			.get('/v1/tenants/' + data.tenantId)
-			.reply(200, {
-				tenantId: data.tenantId,
-				domain: data.domain + '/',
-				isHttpSite: data.isHttpSite
-			}, {
-				'Cache-Control': 'max-age=' + data.maxAge
+	for (const blockOnRefresh of [false, true]) {
+		describe(`blockOnRefresh: ${blockOnRefresh}`, function() {
+			it('looks up tenant info when not cached', function() {
+				const getRequest = nock(data.endpoint)
+					.get('/v1/tenants/' + data.tenantId)
+					.reply(200, {
+						tenantId: data.tenantId,
+						domain: data.domain + '/',
+						isHttpSite: data.isHttpSite
+					}, {
+						'Cache-Control': 'max-age=' + data.maxAge
+					});
+
+				const cache = new LandlordClient.LRULandlordCache();
+				const getTenantUrlLookupStub =
+					sandbox.stub(cache, 'getTenantUrlLookup');
+				getTenantUrlLookupStub
+					.withArgs(data.tenantId)
+					.returns(Promise.reject(new Error('Not Found')));
+				const cacheTenantUrlLookupStub =
+					sandbox.stub(cache, 'cacheTenantUrlLookup');
+				cacheTenantUrlLookupStub
+					.withArgs(data.tenantId, data.tenantUrl, data.expiry)
+					.returns(Promise.resolve());
+
+				const instance = new LandlordClient({ endpoint: data.endpoint, cache, blockOnRefresh });
+				return expect(instance.lookupTenantUrl(data.tenantId))
+					.to.eventually
+					.equal(data.tenantUrl)
+					.then(function() {
+						getRequest.done();
+					})
+					.then(function() {
+						expect(cacheTenantUrlLookupStub.calledOnce).to.be.true;
+					});
 			});
 
-		const cache = new LandlordClient.LRULandlordCache();
-		const getTenantUrlLookupStub =
-			sandbox.stub(cache, 'getTenantUrlLookup');
-		getTenantUrlLookupStub
-			.withArgs(data.tenantId)
-			.returns(Promise.reject(new Error('Not Found')));
-		const cacheTenantUrlLookupStub =
-			sandbox.stub(cache, 'cacheTenantUrlLookup');
-		cacheTenantUrlLookupStub
-			.withArgs(data.tenantId, data.tenantUrl, data.expiry)
-			.returns(Promise.resolve());
+			it('dedupes concurrent tenant info lookups', function() {
+				// this will fail if not deduped due to the nock only working once
 
-		const instance = new LandlordClient({ endpoint: data.endpoint, cache });
-		return expect(instance.lookupTenantUrl(data.tenantId))
-			.to.eventually
-			.equal(data.tenantUrl)
-			.then(function() {
-				getRequest.done();
-			})
-			.then(function() {
-				expect(cacheTenantUrlLookupStub.calledOnce).to.be.true;
-			});
-	});
+				const getRequest = nock(data.endpoint)
+					.get('/v1/tenants/' + data.tenantId)
+					.reply(200, {
+						tenantId: data.tenantId,
+						domain: data.domain + '/',
+						isHttpSite: data.isHttpSite
+					}, {
+						'Cache-Control': 'max-age=' + data.maxAge
+					});
 
-	it('dedupes concurrent tenant info lookups', function() {
-		// this will fail if not deduped due to the nock only working once
+				const cache = new LandlordClient.LRULandlordCache();
+				sandbox
+					.stub(cache, 'getTenantIdLookup')
+					.returns(Promise.reject(new Error('Not Found')));
+				sandbox
+					.stub(cache, 'cacheTenantIdLookup')
+					.returns(Promise.resolve());
 
-		const getRequest = nock(data.endpoint)
-			.get('/v1/tenants/' + data.tenantId)
-			.reply(200, {
-				tenantId: data.tenantId,
-				domain: data.domain + '/',
-				isHttpSite: data.isHttpSite
-			}, {
-				'Cache-Control': 'max-age=' + data.maxAge
+				const instance = new LandlordClient({ endpoint: data.endpoint, cache, blockOnRefresh });
+				const lookup1 = instance.lookupTenantUrl(data.tenantId);
+				const lookup2 = instance.lookupTenantUrl(data.tenantId);
+
+				return Promise
+					.all([
+						expect(lookup1).to.eventually.equal(data.tenantUrl),
+						expect(lookup2).to.eventually.equal(data.tenantUrl)
+					])
+					.then(function() {
+						getRequest.done();
+					});
 			});
 
-		const cache = new LandlordClient.LRULandlordCache();
-		sandbox
-			.stub(cache, 'getTenantIdLookup')
-			.returns(Promise.reject(new Error('Not Found')));
-		sandbox
-			.stub(cache, 'cacheTenantIdLookup')
-			.returns(Promise.resolve());
+			it('does not dedupe concurrent tenant info lookups for different tenant ids', function() {
+				// this will fail if wrongly deduped due to a nock not being satisfied
 
-		const instance = new LandlordClient({ endpoint: data.endpoint, cache });
-		const lookup1 = instance.lookupTenantUrl(data.tenantId);
-		const lookup2 = instance.lookupTenantUrl(data.tenantId);
+				const getRequest = nock(data.endpoint)
+					.get('/v1/tenants/' + data.tenantId)
+					.reply(200, {
+						tenantId: data.tenantId,
+						domain: data.domain + '/',
+						isHttpSite: data.isHttpSite
+					}, {
+						'Cache-Control': 'max-age=' + data.maxAge
+					})
+					.get('/v1/tenants/cats')
+					.reply(200, {
+						tenantId: 'cats',
+						domain: data.domain + '/',
+						isHttpSite: data.isHttpSite
+					}, {
+						'Cache-Control': 'max-age=' + data.maxAge
+					});
 
-		return Promise
-			.all([
-				expect(lookup1).to.eventually.equal(data.tenantUrl),
-				expect(lookup2).to.eventually.equal(data.tenantUrl)
-			])
-			.then(function() {
-				getRequest.done();
-			});
-	});
+				const cache = new LandlordClient.LRULandlordCache();
+				sandbox
+					.stub(cache, 'getTenantIdLookup')
+					.returns(Promise.reject(new Error('Not Found')));
+				sandbox
+					.stub(cache, 'cacheTenantIdLookup')
+					.returns(Promise.resolve());
 
-	it('does not dedupe concurrent tenant info lookups for different tenant ids', function() {
-		// this will fail if wrongly deduped due to a nock not being satisfied
+				const instance = new LandlordClient({ endpoint: data.endpoint, cache, blockOnRefresh });
+				const lookup1 = instance.lookupTenantUrl(data.tenantId);
+				const lookup2 = instance.lookupTenantUrl('cats');
 
-		const getRequest = nock(data.endpoint)
-			.get('/v1/tenants/' + data.tenantId)
-			.reply(200, {
-				tenantId: data.tenantId,
-				domain: data.domain + '/',
-				isHttpSite: data.isHttpSite
-			}, {
-				'Cache-Control': 'max-age=' + data.maxAge
-			})
-			.get('/v1/tenants/cats')
-			.reply(200, {
-				tenantId: 'cats',
-				domain: data.domain + '/',
-				isHttpSite: data.isHttpSite
-			}, {
-				'Cache-Control': 'max-age=' + data.maxAge
-			});
-
-		const cache = new LandlordClient.LRULandlordCache();
-		sandbox
-			.stub(cache, 'getTenantIdLookup')
-			.returns(Promise.reject(new Error('Not Found')));
-		sandbox
-			.stub(cache, 'cacheTenantIdLookup')
-			.returns(Promise.resolve());
-
-		const instance = new LandlordClient({ endpoint: data.endpoint, cache });
-		const lookup1 = instance.lookupTenantUrl(data.tenantId);
-		const lookup2 = instance.lookupTenantUrl('cats');
-
-		return Promise
-			.all([
-				expect(lookup1).to.eventually.equal(data.tenantUrl),
-				expect(lookup2).to.eventually.equal(data.tenantUrl)
-			])
-			.then(function() {
-				getRequest.done();
-			});
-	});
-
-	it('does not look up tenant info when cached', function() {
-		const getRequest = nock(data.endpoint);
-
-		const cache = new LandlordClient.LRULandlordCache();
-		const getTenantUrlLookupStub =
-			sandbox.stub(cache, 'getTenantUrlLookup');
-		getTenantUrlLookupStub
-			.withArgs(data.tenantId)
-			.returns(Promise.resolve({ url: data.tenantUrl, expiry: 1 }));
-		const cacheTenantUrlLookupSpy =
-			sandbox.stub(cache, 'cacheTenantUrlLookup');
-
-		const instance = new LandlordClient({ endpoint: data.endpoint, cache });
-		return expect(instance.lookupTenantUrl(data.tenantId))
-			.to.eventually
-			.equal(data.tenantUrl)
-			.then(function() {
-				getRequest.done();
-			})
-			.then(function() {
-				expect(cacheTenantUrlLookupSpy.notCalled).to.be.true;
-			});
-	});
-
-	it('uses stale cached value and updates in background', function() {
-		sandbox.clock.restore();
-
-		const getRequest = nock(data.endpoint)
-			.get(`/v1/tenants/${data.tenantId}`)
-			.delay(50)
-			.reply(200, {
-				tenantId: data.tenantId,
-				domain: data.domain + '.example.com',
-				isHttpSite: data.isHttpSite
-			}, {
-				'Cache-Control': 'max-age=' + data.maxAge
+				return Promise
+					.all([
+						expect(lookup1).to.eventually.equal(data.tenantUrl),
+						expect(lookup2).to.eventually.equal(data.tenantUrl)
+					])
+					.then(function() {
+						getRequest.done();
+					});
 			});
 
-		const cache = new LandlordClient.LRULandlordCache();
-		cache.cacheTenantUrlLookup(data.tenantId, data.tenantUrl, 1);
+			it('does not look up tenant info when cached', function() {
+				const getRequest = nock(data.endpoint);
 
-		const before = Date.now();
-		const instance = new LandlordClient({ endpoint: data.endpoint, cache });
-		return expect(instance.lookupTenantUrl(data.tenantId))
-			.to.eventually
-			.equal(`http://${data.domain}/`)
-			.then(function() {
-				const now = Date.now();
-				expect(now - before).to.be.below(50);
+				const cache = new LandlordClient.LRULandlordCache();
+				const getTenantUrlLookupStub =
+					sandbox.stub(cache, 'getTenantUrlLookup');
+				getTenantUrlLookupStub
+					.withArgs(data.tenantId)
+					.returns(Promise.resolve({ url: data.tenantUrl, expiry: 1 }));
+				const cacheTenantUrlLookupSpy =
+					sandbox.stub(cache, 'cacheTenantUrlLookup');
 
-				return new Promise(resolve => setTimeout(resolve, 55)).then(() => {
+				const instance = new LandlordClient({ endpoint: data.endpoint, cache, blockOnRefresh });
+				return expect(instance.lookupTenantUrl(data.tenantId))
+					.to.eventually
+					.equal(data.tenantUrl)
+					.then(function() {
+						getRequest.done();
+					})
+					.then(function() {
+						expect(cacheTenantUrlLookupSpy.notCalled).to.be.true;
+					});
+			});
+
+			it('gets error when tenantId not found', function() {
+				const nonExistantTenantId = '88ce2351-2xxx-40ba-8774-d4d46f0d2d1a';
+				const getRequest = nock(data.endpoint)
+					.get('/v1/tenants/' + nonExistantTenantId)
+					.replyWithError();
+
+				const cache = new LandlordClient.LRULandlordCache();
+				const getTenantUrlLookupStub =
+					sandbox.stub(cache, 'getTenantUrlLookup');
+				getTenantUrlLookupStub
+					.withArgs(nonExistantTenantId)
+					.returns(Promise.reject(new Error('Not Found')));
+				const cacheTenantUrlLookupStub =
+					sandbox.stub(cache, 'cacheTenantUrlLookup');
+				cacheTenantUrlLookupStub
+					.withArgs(nonExistantTenantId, data.tenantUrl, data.expiry)
+					.returns(Promise.reject(new Error('Not Found')));
+
+				const instance = new LandlordClient({ endpoint: data.endpoint, cache, blockOnRefresh });
+				return expect(instance.lookupTenantUrl(nonExistantTenantId))
+					.to.be.rejectedWith(errors.TenantLookupFailed)
+					.then(function() {
+						getRequest.done();
+					});
+			});
+		});
+	}
+
+	describe('blockOnRefresh: false', function() {
+		it('uses stale cached value and updates in background', function() {
+			sandbox.clock.restore();
+
+			const getRequest = nock(data.endpoint)
+				.get(`/v1/tenants/${data.tenantId}`)
+				.delay(50)
+				.reply(200, {
+					tenantId: data.tenantId,
+					domain: data.domain + '.example.com',
+					isHttpSite: data.isHttpSite
+				}, {
+					'Cache-Control': 'max-age=' + data.maxAge
+				});
+
+			const cache = new LandlordClient.LRULandlordCache();
+			cache.cacheTenantUrlLookup(data.tenantId, data.tenantUrl, 1);
+
+			const before = Date.now();
+			const instance = new LandlordClient({ endpoint: data.endpoint, cache });
+			return expect(instance.lookupTenantUrl(data.tenantId))
+				.to.eventually
+				.equal(`http://${data.domain}/`)
+				.then(function() {
+					const now = Date.now();
+					expect(now - before).to.be.below(50);
+
+					return new Promise(resolve => setTimeout(resolve, 55)).then(() => {
+						getRequest.done();
+
+						return expect(instance.lookupTenantUrl(data.tenantId))
+							.to.eventually
+							.equal(`http://${data.domain}.example.com/`);
+					});
+				});
+		});
+
+		it('emits an error when background refresh fails', function() {
+			sandbox.clock.restore();
+
+			const getRequest = nock(data.endpoint)
+				.get(`/v1/tenants/${data.tenantId}`)
+				.reply(502);
+
+			const cache = new LandlordClient.AbstractLandlordCache();
+			sandbox
+				.stub(cache, 'getTenantUrlLookup')
+				.withArgs(data.tenantId)
+				.returns(Promise.resolve({ url: data.tenantUrl, expiry: 1 }));
+
+			let resolveEmittedError;
+			const errorEmitted = new Promise(resolve => {
+				resolveEmittedError = resolve;
+			});
+			const instance = new LandlordClient({ endpoint: data.endpoint, cache })
+				.on('error', resolveEmittedError);
+			instance.lookupTenantUrl(data.tenantId);
+
+			return errorEmitted
+				.then(emittedError => {
 					getRequest.done();
 
-					return expect(instance.lookupTenantUrl(data.tenantId))
-						.to.eventually
-						.equal(`http://${data.domain}.example.com/`);
+					expect(emittedError)
+						.to.be.an.instanceof(errors.TenantLookupFailed);
 				});
-			});
-	});
-
-	it('emits an error when background refresh fails', function() {
-		sandbox.clock.restore();
-
-		const getRequest = nock(data.endpoint)
-			.get(`/v1/tenants/${data.tenantId}`)
-			.reply(502);
-
-		const cache = new LandlordClient.AbstractLandlordCache();
-		sandbox
-			.stub(cache, 'getTenantUrlLookup')
-			.withArgs(data.tenantId)
-			.returns(Promise.resolve({ url: data.tenantUrl, expiry: 1 }));
-
-		let resolveEmittedError;
-		const errorEmitted = new Promise(resolve => {
-			resolveEmittedError = resolve;
 		});
-		const instance = new LandlordClient({ endpoint: data.endpoint, cache })
-			.on('error', resolveEmittedError);
-		instance.lookupTenantUrl(data.tenantId);
-
-		return errorEmitted
-			.then(emittedError => {
-				getRequest.done();
-
-				expect(emittedError)
-					.to.be.an.instanceof(errors.TenantLookupFailed);
-			});
 	});
 
-	it('gets error when tenantId not found', function() {
-		const nonExistantTenantId = '88ce2351-2xxx-40ba-8774-d4d46f0d2d1a';
-		const getRequest = nock(data.endpoint)
-			.get('/v1/tenants/' + nonExistantTenantId)
-			.replyWithError();
+	describe('blockOnRefresh: true', function() {
+		it('waits for updated value when cache is stale', function() {
+			sandbox.clock.restore();
 
-		const cache = new LandlordClient.LRULandlordCache();
-		const getTenantUrlLookupStub =
-			sandbox.stub(cache, 'getTenantUrlLookup');
-		getTenantUrlLookupStub
-			.withArgs(nonExistantTenantId)
-			.returns(Promise.reject(new Error('Not Found')));
-		const cacheTenantUrlLookupStub =
-			sandbox.stub(cache, 'cacheTenantUrlLookup');
-		cacheTenantUrlLookupStub
-			.withArgs(nonExistantTenantId, data.tenantUrl, data.expiry)
-			.returns(Promise.reject(new Error('Not Found')));
+			const getRequest = nock(data.endpoint)
+				.get(`/v1/tenants/${data.tenantId}`)
+				.reply(200, {
+					tenantId: data.tenantId,
+					domain: data.domain + '.example.com',
+					isHttpSite: data.isHttpSite
+				}, {
+					'Cache-Control': 'max-age=' + data.maxAge
+				});
 
-		const instance = new LandlordClient({ endpoint: data.endpoint, cache });
-		return expect(instance.lookupTenantUrl(nonExistantTenantId))
-			.to.be.rejectedWith(errors.TenantLookupFailed)
-			.then(function() {
-				getRequest.done();
+			const cache = new LandlordClient.LRULandlordCache();
+			cache.cacheTenantUrlLookup(data.tenantId, data.tenantUrl, 1);
+
+			const instance = new LandlordClient({ endpoint: data.endpoint, cache, blockOnRefresh: true });
+			return expect(instance.lookupTenantUrl(data.tenantId))
+				.to.eventually
+				.equal(`http://${data.domain}.example.com/`)
+				.then(() => getRequest.done());
+		});
+
+		it('uses stale cached value and emits an error when refresh fails', function() {
+			sandbox.clock.restore();
+
+			const getRequest = nock(data.endpoint)
+				.get(`/v1/tenants/${data.tenantId}`)
+				.reply(502);
+
+			const cache = new LandlordClient.AbstractLandlordCache();
+			sandbox
+				.stub(cache, 'getTenantUrlLookup')
+				.withArgs(data.tenantId)
+				.returns(Promise.resolve({ url: data.tenantUrl, expiry: 1 }));
+
+			let resolveEmittedError;
+			const errorEmitted = new Promise(resolve => {
+				resolveEmittedError = resolve;
 			});
+			const instance = new LandlordClient({ endpoint: data.endpoint, cache })
+				.on('error', resolveEmittedError);
+			const lookup = instance.lookupTenantUrl(data.tenantId);
+
+			return Promise.all([
+				expect(lookup).to.eventually.equal(data.tenantUrl),
+				expect(errorEmitted).to.eventually.be.an.instanceof(errors.TenantLookupFailed),
+				() => getRequest.done(),
+			]);
+		});
 	});
 
 	it('sends a custom user-agent header when looking up tenant id', function() {

@@ -58,6 +58,19 @@ agent when sending requests to Landlord. Assists in tracking issues and RCAs.
 ...new LandlordClient({ name: 'johns-service' })
 ```
 
+##### Option: blockOnRefresh `boolean` _(false)_
+
+You may optionally adjust the behaviour of lookupTenantUrl when the cache is
+stale. By default a stale cache entry will be used immediately and the attempt
+to update the cached value will occur in the background. Set `blockOnRefresh`
+to `true` to instead wait for the result of the refresh to complete, returning
+the fresh value instead. An error will still be emitted, and the stale value
+will still be used if the refresh fails.
+
+Use this option if you believe you are slighly more sensitive to stale cache
+entries (you likely are not), or if you're in an environment that is not
+conducive to background / out-of-band work such as AWS Lambda.
+
 ---
 
 #### `.lookupTenantId(String host)` -> `Promise<String>`
