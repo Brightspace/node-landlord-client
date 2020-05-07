@@ -1,6 +1,6 @@
 {
   "name": "landlord-client",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "Helper for interacting with Landlord",
   "main": "src/index.js",
   "files": [
@@ -32,12 +32,12 @@
   "devDependencies": {
     "chai": "^4.1.0",
     "chai-as-promised": "^7.1.1",
-    "coveralls": "^2.13.1",
+    "coveralls": "^3.1.0",
     "eslint": "^4.0.0",
     "eslint-config-brightspace": "0.3.1",
-    "mocha": "^3.4.2",
+    "mocha": "^7.1.2",
     "nock": "^9.0.13",
-    "nyc": "^11.0.3",
+    "nyc": "^15.0.1",
     "sinon": "^2.3.8"
   },
   "license": "Apache-2.0"
